@@ -1,0 +1,226 @@
+---
+title: "ACM40960 Project"
+author: "Nicole Loughlin - 14487568"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Getting Started...
+
+```{r echo=TRUE}
+#SET WORKING DIRECTORY TO WHERE THIS SCRIPT IS SAVED
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+#SET SEED SO ANY RESULTS ARE REPRODUCIBLE
+set.seed(40960)
+```
+
+### Creating Randoms set of DNA Sequence
+
+```{r echo=TRUE}
+#LOAD REQUIRED PACKAGE
+library(ape)
+# NUMBER OF SEQUENCES
+n = 1000
+# SEQUENCE LENGTH
+s = 10000
+# GENERATE RANDOM SETS OF DNA SEQUENCE
+x = rDNAbin(nrow = n, ncol = s)
+x
+```
+
+### Bioconductor
+
+```{r echo=TRUE}
+# LOAD REQUIRED PACKAGE
+#BiocManager::install("BiocPkgTools")
+library(BiocPkgTools)
+
+# GET TIBBLE OF BIOCONDUCTOR DOWNLOAD STATISTICS
+pkgs = biocDownloadStats()
+head(pkgs)
+
+# --- CREATE 'GRANGES' OBJECT --- #
+
+# LOAD REQUIRED PACKAGE
+#BiocManager::install("GenomicRanges")
+library(GenomicRanges)
+gr = GRanges(seqnames = "chrl", 
+             ranges = IRanges(start = c(102012, 520211), end = c(120303, 526211)),
+             strand = c("+", "-"),
+             gene_id = c(1001, 2151),
+             score = c(10,25))
+print(gr)
+width(gr)
+gr[gr$score>15, ]
+
+# LOAD REQUIRED PACKAGE
+#BiocManager::install("plyranges")
+library(plyranges)
+
+gr %>%
+  filter(score>15)
+
+gr %>%
+  filter(score>15) %>%
+  width()
+
+```
+
+
+# Human Genome
+
+```{r echo=TRUE}
+# READ IN SAMPLES INFO FILE (PROVIDED ON GITHUB)
+samples_info = read.delim("igsr_samples.tsv")
+
+# CONVERT COLUMNS TO FACTORS
+samples_info$Sample.name = as.factor(samples_info$Sample.name)
+samples_info$Sex = as.factor(samples_info$Sex)
+samples_info$Biosample.ID = as.factor(samples_info$Sample.name)
+samples_info$Population.code = as.factor(samples_info$Population.code)
+samples_info$Population.name = as.factor(samples_info$Population.name)
+samples_info$Superpopulation.code = as.factor(samples_info$Superpopulation.code)
+samples_info$Superpopulation.name = as.factor(samples_info$Superpopulation.name)
+samples_info$Population.elastic.ID = as.factor(samples_info$Population.elastic.ID)
+samples_info$Data.collections = as.factor(samples_info$Data.collections)
+
+# CHECK TYPES OF EACH VARIABLE
+str(samples_info)
+
+# VCF FILE NAME
+fl = "ALL.wgs.mergedSV.v8.20130502.svs.genotypes.vcf" 
+# EXTRACT INFO FROM VCF FILE
+library(pegas)
+labs = VCFlabels(fl)
+# CHECK ALL LABELS ARE IN ORIGINAL TABLE
+all(labs %in% samples_info$Sample.name)
+
+# SCAN THE VCF FILE
+info = VCFloci(fl)
+# CONVERT CHROMOSOME COLUMN TO FACTOR
+info$CHROM = as.factor(info$CHROM)
+# GET SUMMARY
+summary(info$CHROM)
+
+# CREATE A SUBSET OF CHROMOSOME 22
+chrom22 = subset(info, CHROM == "22")
+head(chrom22)
+
+# READ WHOLE DATA
+MITO = read.vcf(fl, to = nrow(chrom22))
+
+# CONVERT TO GENIND TYPE
+g = loci2genind(MITO, ploidy = 1)
+
+
+# ----- PRINCIPAL COMPONENT ANALYSIS ----- #
+pca = prcomp(g@tab, scale. = TRUE)
+
+pcasum = round(summary(pca)$importance[,1:100]*100,3) #Summary of first 100 PCs
+barplot(pcasum[2, ],
+        main = "Proportion of the Variance explained by PC1 to PC100",
+        ylab = "%",
+        col = "lightblue",
+        ylim = c(0,10))
+
+#SCREE PLOT
+std = pca$sdev
+var = std^2
+prop_var = var/sum(var)
+plot(cumsum(prop_var[1:100]),
+        xlab = "Principal Component",
+        ylab = "Cumulative Proportion of Variance Explained",
+        main = "Screeplot",
+        type = "b")
+
+
+```
+
+# Influenza H1N1 Virus Sequences
+
+```{r echo=TRUE}
+# ----- LOAD GENOMIC DATA ----- #
+# LOAD REQUIRED PACKAGE
+require(adegenet)
+# TEMPORARILY CHANGE WORKING DIRECTORY TO FILES FOLDER IN THE ADEGENET PACKAGE
+setwd(system.file("files/", package = "adegenet"))
+# RETURN A CHARACTER VECTOR OF FILE NAMES IN THE DIRECTORY THAT MATCH H1N1
+dir(pattern = "H1N1")
+
+# READ IN FASTA FILE AND STORE AS DNAbin
+H1N1.HA = read.dna("pdH1N1-HA.fasta", "fasta")
+# VIEW 
+H1N1.HA
+
+# READ IN FASTA FILE AND STORE AS DNAbin
+H1N1.NA = read.dna("pdH1N1-NA.fasta", "fasta")
+# VIEW 
+H1N1.NA
+
+# READ IN CSV FILE AND STORE AS data.frame
+H1N1.DATA = read.csv("pdH1N1-data.csv", as.is = TRUE)
+# VIEW TYPE OF EACH COLUMN WITHIN THE DATA FRAME
+str(H1N1.DATA)
+
+# CHECK THAT LABELS IN BOTH SEQUENCE SETS AND THOSE IN THE DATA TABLE ARE THE SAME
+all(labels(H1N1.HA) == H1N1.DATA$HA.acc.nb)
+all(labels(H1N1.NA) == H1N1.DATA$NA.acc.nb)
+
+# ----- EXPLORING HAPLOTYPES & NUCLEOTIDE DIVERSITY ----- #
+# LOAD REQUIRED PACKAGE
+library(pegas)
+# EXTRACT THE HAPLOTYPES FROM THE DNA SEQUENCES
+h_HA = haplotype(H1N1.HA)
+h_NA = haplotype(H1N1.NA)
+# VIEW
+h_HA
+# PLOT
+plot(h_HA,main = "Frequency of Haplotypes in H1N1.HA")
+# EXTACT INDICES OF MOST COMMON HAPLOTYPES
+attr(h_HA, "index")[[3]]
+# CREATE SUBSET WHERE HAPLOTYPES OF FREQUENCY LESS THAN 2 ARE DROPPED
+h_HA1 = subset(h_HA, minfreq = 2)
+
+# COMPUTE HAPLOTYPE DIVERSITY
+hap.div(h_HA1, variance = TRUE)
+
+# COMPUTE NUCLEOTIDE DIVERSITY
+nuc.div(h_HA1, variance = TRUE)
+
+# SLIDING WINDOWS - PLOT SHOWS PROPORTIONS OF GC
+plot(sw(h_HA1, rowAverage = TRUE), show.ranges = TRUE, col.ranges = "black", ylab = "GC content")
+
+
+# ----- GENOMIC STRUCTURE ----- #
+# CALCULATE HAMMING DISTANCE MATRICES
+d_HA = dist.dna(h_HA, "N")
+d_NA = dist.dna(h_NA, "N")
+
+# BUILD NETWORKS - RANDOMIZED MINIMUM SPANNING TREE
+nt_HA = rmst(d_HA)
+nt_HA
+nt_NA = rmst(d_NA)
+nt_NA
+
+table(rbind(nt_HA, attr(nt_HA, "alter.links"))[, 3])
+table(rbind(nt_NA, attr(nt_NA, "alter.links"))[, 3])
+
+freq_HA = summary(h_HA)
+co_HA = grey((max(freq_HA)-freq_HA)/max(freq_HA))
+plot(nt_HA, labels = FALSE, bg = co_HA)
+
+freq_NA = summary(h_NA)
+co_NA = grey((max(freq_NA)-freq_NA)/max(freq_NA))
+plot(nt_NA, labels = FALSE, bg = co_NA)
+```
+
+
+
+
+
